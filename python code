@@ -1,0 +1,120 @@
+# Import required libraries
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+import numpy as np
+
+# Load the dataset
+data = pd.read_json('/content/covid_states_daily.json')
+df = pd.json_normalize(data['states_daily'])
+
+# Convert 'dateymd' to datetime
+df['dateymd'] = pd.to_datetime(df['dateymd'])
+
+# Choose a state for analysis (Example: 'mh' for Maharashtra)
+state = 'mh'
+
+# Filter data by 'Confirmed', 'Recovered', 'Deceased'
+confirmed = df[df['status'] == 'Confirmed'][['dateymd', state]].reset_index(drop=True)
+recovered = df[df['status'] == 'Recovered'][['dateymd', state]].reset_index(drop=True)
+deceased = df[df['status'] == 'Deceased'][['dateymd', state]].reset_index(drop=True)
+
+# Merge confirmed, recovered, and deceased dataframes
+merged_data = pd.merge(confirmed, recovered, on='dateymd', suffixes=('_confirmed', '_recovered'))
+merged_data = pd.merge(merged_data, deceased, on='dateymd')
+merged_data.columns = ['date', 'confirmed', 'recovered', 'deceased']
+
+# Convert columns to numeric, errors='coerce' handles non-numeric values
+merged_data['confirmed'] = pd.to_numeric(merged_data['confirmed'], errors='coerce')
+merged_data['recovered'] = pd.to_numeric(merged_data['recovered'], errors='coerce')
+merged_data['deceased'] = pd.to_numeric(merged_data['deceased'], errors='coerce')
+
+# Fill missing values with 0
+merged_data = merged_data.fillna(0)
+
+# Task 1: Trend Analysis of Confirmed Cases
+plt.figure(figsize=(10, 6))
+plt.plot(merged_data['date'], merged_data['confirmed'], label='Confirmed Cases')
+plt.title(f'Confirmed COVID-19 Cases Over Time in {state.upper()}')
+plt.xlabel('Date')
+plt.ylabel('Number of Cases')
+plt.xticks(rotation=45)
+plt.grid(True)
+plt.legend()
+plt.show()
+
+# Task 2: Predicting Future Active Cases (Using Linear Regression)
+
+# Calculate active cases
+merged_data['active'] = merged_data['confirmed'] - merged_data['recovered'] - merged_data['deceased']
+
+# Prepare the data for linear regression
+X = np.array(range(len(merged_data))).reshape(-1, 1)  # Time as independent variable
+y = merged_data['active'].values  # Active cases as dependent variable
+
+# Train the Linear Regression model
+model = LinearRegression()
+model.fit(X, y)
+
+# Predict the next 10 days of active cases
+future_days = 10
+X_future = np.array(range(len(merged_data), len(merged_data) + future_days)).reshape(-1, 1)
+y_future = model.predict(X_future)
+
+# Plot the actual and predicted active cases
+plt.figure(figsize=(10, 6))
+plt.plot(merged_data['date'], merged_data['active'], label='Actual Active Cases')
+future_dates = pd.date_range(merged_data['date'].max() + pd.Timedelta(days=1), periods=future_days)
+plt.plot(future_dates, y_future, label='Predicted Active Cases', linestyle='--')
+plt.title(f'Active COVID-19 Cases Prediction for {state.upper()}')
+plt.xlabel('Date')
+plt.ylabel('Number of Active Cases')
+plt.xticks(rotation=45)
+plt.grid(True)
+plt.legend()
+plt.show()
+
+# Task 3: Examining the Relationship Between Confirmed and Recovered Cases
+
+# Scatter plot of Confirmed vs Recovered cases
+plt.figure(figsize=(8, 6))
+plt.scatter(merged_data['confirmed'], merged_data['recovered'])
+plt.title(f'Relationship between Confirmed and Recovered Cases in {state.upper()}')
+plt.xlabel('Confirmed Cases')
+plt.ylabel('Recovered Cases')
+plt.grid(True)
+plt.show()
+
+# Linear regression between confirmed and recovered
+X_confirmed = merged_data['confirmed'].values.reshape(-1, 1)
+y_recovered = merged_data['recovered'].values
+
+model_recovered = LinearRegression()
+model_recovered.fit(X_confirmed, y_recovered)
+r_squared = model_recovered.score(X_confirmed, y_recovered)
+
+print(f'R² value for confirmed vs recovered cases: {r_squared:.4f}')
+
+# Task 4: Comparing Recovery Rates Across States
+states = ['mh', 'kl', 'tn', 'dl', 'ka']  # Add more states as needed
+recovery_rates = []
+
+for state in states:
+    state_confirmed = df[df['status'] == 'Confirmed'][['dateymd', state]].fillna(0)
+    state_recovered = df[df['status'] == 'Recovered'][['dateymd', state]].fillna(0)
+    
+    # Convert the state columns to numeric before summing
+    total_confirmed = pd.to_numeric(state_confirmed[state], errors='coerce').sum()
+    total_recovered = pd.to_numeric(state_recovered[state], errors='coerce').sum()
+    
+    recovery_rate = total_recovered / total_confirmed if total_confirmed != 0 else 0
+    recovery_rates.append(recovery_rate)
+
+# Plotting recovery rates for comparison
+plt.figure(figsize=(10, 6))
+plt.bar(states, recovery_rates)
+plt.title('Recovery Rates Across Selected States')
+plt.xlabel('State')
+plt.ylabel('Recovery Rate')
+plt.grid(True)
+plt.show()
